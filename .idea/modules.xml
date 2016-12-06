@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<project version="4">
-  <component name="ProjectModuleManager">
-    <modules>
-      <module fileurl="file://$PROJECT_DIR$/../../Programs/sources/validation_viewer/.idea/python-validation_viewer.iml" filepath="$PROJECT_DIR$/../../Programs/sources/validation_viewer/.idea/python-validation_viewer.iml" />
-      <module fileurl="file://$PROJECT_DIR$/.idea/validation_viewer.iml" filepath="$PROJECT_DIR$/.idea/validation_viewer.iml" />
-    </modules>
-  </component>
-</project>
