@@ -53,11 +53,11 @@ class ValidationPlots(object):
 
             for var in vvars:
                 key = var + '_' + para
-                print('A min of {0:.2f} occurs on {1} for {2}'.format(df[key].min(),
+                print('For the {2}, a min of {0:.2f} occurs on {1}'.format(df[key].min(),
                                                                       df[key].idxmin(),
                                                                       key
                                                                       ))
-                print('A max of {0:.2f} occurs on {1} for {2}'.format(df[key].max(),
+                print('For {2}, a max of {0:.2f} occurs on {1}'.format(df[key].max(),
                                                                       df[key].idxmax(),
                                                                       key
                                                                       ))
@@ -70,8 +70,8 @@ class ValidationPlots(object):
                 df[key].plot(style='.-', figsize=(width, height), grid=True, linewidth=0.5, markersize=2)
             ll = [self.results_output[path][0], path.split('_')[2]]
             legend(vvars, loc=8, ncol=3, fontsize=8)
-            ll.append(para)
-            pyplot.title('{0}, {1} Hemisphere'.format(*ll))
+            ll.append(para.title())
+            pyplot.title('{2}, {1} Hemisphere'.format(*ll))
             summaries['{0}_{1}'.format(*ll).replace(' ', '')] = df.describe()
             plotpath = os.path.join(self.output_dir, '{0}{1}{2}.png'.format(*ll).replace(' ', ''))
             # ylim(-30, 5)
@@ -79,7 +79,7 @@ class ValidationPlots(object):
             xlabel('Date')
             ylabel('Percentage ' + para.capitalize())
             print('Saving {0}'.format(plotpath))
-            # savefig(plotpath, dpi=300)
+            savefig(plotpath, dpi=300)
             show()
 
         return df #Panel(summaries)
