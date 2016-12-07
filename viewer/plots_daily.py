@@ -12,7 +12,6 @@ from pandas import datetime
 import pyresample as pr
 import h5py
 
-
 class ValidationInfo(object):
 
     bin_intervals = 100*np.array([(0.00, 0.10), (0.10, 0.20), (0.20, 0.30), (0.30, 0.40), (0.40, 0.50),
@@ -116,7 +115,6 @@ class ValidationInfo(object):
 
 
 class ValidationPlots(ValidationInfo):
-
     def plot_hemisphere(self, hm, ax, data, **imshowargs):
         area_def = pr.utils.load_area(self.path_area_config, '{0}_{1}'.format(self.projection, hm))
         bmap = pr.plot.area_def2basemap(area_def)
