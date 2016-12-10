@@ -1,3 +1,12 @@
+"""
+Usage:
+    plots_daily.py <plot_function> <output_directory>
+
+Options:
+  -h --help     Show this screen.
+  --version     Show version..
+"""
+
 from __future__ import division
 
 import numpy as np
@@ -9,6 +18,10 @@ import matplotlib.pyplot as plt
 import pyresample as pr
 import h5py
 import gc
+import functools
+from multiprocessing import Pool
+from docopt import docopt
+
 
 
 class ValidationPlots(object):
@@ -28,6 +41,7 @@ class ValidationPlots(object):
         self.dateidx = None
         self.dateidx_old = None
         self.setup_plot_both_maps_with_anomaly()
+        self.length = self.satellite.shape[-1]
 
     def __iter__(self):
         for dateidx, date in enumerate(self.dates):
@@ -53,6 +67,8 @@ class ValidationPlots(object):
             self.hemisphere_old = self._hemisphere
             print('Reading {0} data'.format(self._hemisphere))
             self.dates = self.read_data()
+            self.setup_plot_both_maps_with_anomaly()
+            self.length = self.satellite.shape[-1]
 
     def read_hdf5(self, hemisphere, ref_sat, algo='data'):
         hdf5 = h5py.File(self.path_to_file, 'r')
@@ -259,40 +275,35 @@ class ValidationPlots(object):
         return self.heat_map(dateidx, colorscale='LogNorm')
 
 
-def plot_genertor(plot_type, path_to_hdf5, path_area_config, projection):
-    "Generates images for all days"
-
-    vplots = ValidationPlots(path_to_hdf5, path_area_config, projection)
-    for hm in ('NH', 'SH'):
-        vplots.hemisphere = hm
-        for i, vp in enumerate(vplots):
-            try:
-                fname = '{0}_{1}_{2}_.png'.format(plot_type, hm, i)
-                out_path = os.path.join(out_dir, fname)
-                if not os.path.isfile(out_path):
-                    print('Making: ' + fname)
-                    figure = getattr(vp, plot_type)()
-                    figure.savefig(out_path)
-                    plt.close(figure)
-                else:
-                    print('Skipping: ' + fname)
-                del vp
-            except ValueError:
-                pass
-            except Exception as e:
-                print(traceback.format_exc())
-
-
-
-import config.config_osi450 as cfg
-import functools
+# def plot_genertor(plot, plot_type, path_to_hdf5, path_area_config, projection):
+#     "Generates images for all days"
+#
+#     vplots = ValidationPlots(path_to_hdf5, path_area_config, projection)
+#     for hm in ('NH', 'SH'):
+#         vplots.hemisphere = hm
+#         for i, vp in enumerate(vplots):
+#             try:
+#                 fname = '{0}_{1}_{2}_.png'.format(plot_type, hm, i)
+#                 out_path = os.path.join(out_dir, fname)
+#                 if not os.path.isfile(out_path):
+#                     print('Making: ' + fname)
+#                     figure = getattr(vp, plot_type)()
+#                     figure.savefig(out_path)
+#                     plt.close(figure)
+#                 else:
+#                     print('Skipping: ' + fname)
+#                 del vp
+#             except ValueError:
+#                 pass
+#             except Exception as e:
+#                 print(traceback.format_exc())
 
 
-def plot_genertor2(plot_type, out_dir, i):
+def make_plot(plot_type, out_dir, hm, i):
     "Generates images for all days"
 
     try:
-        fname = '{0}_{1}_{2}_.png'.format(plot_type, vplots.hemisphere, i)
+        fname = '{0}_{1}_{2}_.png'.format(plot_type, hm, i)
         out_path = os.path.join(out_dir, fname)
         if not os.path.isfile(out_path):
             print('Making: ' + fname)
@@ -307,22 +318,19 @@ def plot_genertor2(plot_type, out_dir, i):
         print(traceback.format_exc())
 
 
-from multiprocessing import Pool
-
-
 if __name__ == '__main__':
+    args = docopt(__doc__)
+
+    import config.config_osi450 as cfg
+    vplots = ValidationPlots(cfg.path_to_hdf5, cfg.path_area_config, 'EASE2')
     for hm in ['NH', 'SH']:
-        pool = Pool()           # Create a multiprocessing Pool
-
-        vplots = ValidationPlots(cfg.path_to_hdf5, cfg.path_area_config, 'EASE2')
-
-        pg = functools.partial(plot_genertor2,
-                               'plot_both_maps_with_anomaly',
-                               '/data/jol/validation/plots/plot_map_with_anolomoly/')
         vplots.hemisphere = hm
-        pool.map(pg, range(0, 10))  # proces data_inputs iterable with pool
-
-
+        pg = functools.partial(make_plot,
+                               args['<plot_function>'],
+                               args['<output_directory>'],
+                               vplots.hemisphere)
+        pool = Pool()
+        pool.map(pg, range(0, vplots.length))
 
 
 # import config.config_osi450 as cfg
