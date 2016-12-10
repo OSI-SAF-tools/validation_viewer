@@ -23,7 +23,6 @@ from multiprocessing import Pool
 from docopt import docopt
 
 
-
 class ValidationPlots(object):
 
     bin_intervals = 100*np.array([(0.00, 0.10), (0.10, 0.20), (0.20, 0.30), (0.30, 0.40), (0.40, 0.50),
@@ -182,9 +181,9 @@ class ValidationPlots(object):
         self.bmapax4.ax.set_title("SIC Anomaly ('NIC' - 'OSI SAF') where the NIC shows Ice", fontsize=10)
 
         # plt.tight_layout()
-        cbar_ax1 = self.fig.add_axes([0.04, 0.548, 0.025, 0.35])
+        cbar_ax1 = self.fig.add_axes([0.04, 0.54, 0.025, 0.35])
         self.fig.colorbar(im1, cax=cbar_ax1)
-        cbar_ax2 = self.fig.add_axes([0.04, 0.128, 0.025, 0.35])
+        cbar_ax2 = self.fig.add_axes([0.04, 0.110, 0.025, 0.35])
         self.fig.colorbar(im3, cax=cbar_ax2)
         
         return self.fig
