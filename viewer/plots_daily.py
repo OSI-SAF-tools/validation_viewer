@@ -1,22 +1,21 @@
 from __future__ import division
 
-from pylab import *
+import numpy as np
+from numpy import ma
 import os
 import traceback
-from functools import partial
-import glob
 from pandas import *
-import matplotlib
 import matplotlib.pyplot as plt
-from pandas import datetime
 import pyresample as pr
 import h5py
+import gc
 
-class ValidationInfo(object):
+
+class ValidationPlots(object):
 
     bin_intervals = 100*np.array([(0.00, 0.10), (0.10, 0.20), (0.20, 0.30), (0.30, 0.40), (0.40, 0.50),
                                   (0.50, 0.60), (0.60, 0.70), (0.70, 0.80), (0.80, 0.90), (0.90, 1.00)])
-    bin_edges = sort(unique(array(bin_intervals).flatten()))
+    bin_edges = np.sort(unique(np.array(bin_intervals).flatten()))
     _hemisphere, hemisphere_old = 'NH', 'NH'
 
     def __init__(self, path_to_file, path_area_config, projection):
@@ -28,14 +27,17 @@ class ValidationInfo(object):
         self.df = None # Set in dataframe()
         self.dateidx = None
         self.dateidx_old = None
+        self.setup_plot_both_maps_with_anomaly()
 
     def __iter__(self):
         for dateidx, date in enumerate(self.dates):
             self.dateidx = dateidx
             self.date = date
             yield self
+            gc.collect()
             try:
-                plt.close(fig)
+                plt.close('all')
+                # plt.close(fig)
             except NameError:
                 print('Could not close figure')
                 pass
@@ -112,10 +114,7 @@ class ValidationInfo(object):
     #     df['sh'][parameter].plot(style='.-', title=title, figsize=(width, height))
     #     grid()
 
-
-
-class ValidationPlots(ValidationInfo):
-    def plot_hemisphere(self, hm, ax, data, **imshowargs):
+    def plot_hemisphere(self, hm, ax):
         area_def = pr.utils.load_area(self.path_area_config, '{0}_{1}'.format(self.projection, hm))
         bmap = pr.plot.area_def2basemap(area_def)
         bmap.ax = ax
@@ -126,93 +125,53 @@ class ValidationPlots(ValidationInfo):
         # draw meridians
         meridians = np.arange(0., 360., 10)
         bmap.drawmeridians(meridians, labels=[0, 0, 0, 0], fontsize=10)
-        im = bmap.imshow(data, origin='upper', **imshowargs)
-        return im, bmap.ax
+        return bmap
 
-    def plot_map_with_anomaly(self, dateidx=None, vmin=0, vmax=100):
+    def setup_plot_both_maps_with_anomaly(self):
 
-        # The plots are not automatically cleared if the function is repeatedly called.
-        # This stops RAM being used up.
-        global bmapax1, bmapax2, fig
-        try:
-            bmapax1.cla()
-            bmapax2.cla()
-        except NameError:
-            pass
-
-        if dateidx is None:
-            # self.dateidx is set by the __iter__ method if not given in the function
-            dateidx = self.dateidx
-        fig, (ax1, ax2) = plt.subplots(nrows=2, ncols=1, figsize=(11, 11))
-        palette1 = plt.cm.gist_ncar
-        palette1.set_bad(color='k', alpha=0.2)  # Masked values are grey
-        palette2 = plt.cm.seismic
-        palette2.set_bad(color='k', alpha=0.2)
-        ref, sat = self.get_ref_sat(dateidx)
-        im1, bmapax1 = self.plot_hemisphere(self._hemisphere, ax1, sat, cmap=palette1, vmin=0, vmax=vmax)
-        Date = self.dates[dateidx]
-        bmapax1.set_title('Date: {0}\n\nOSI SAF SIC'.format(Date), fontsize=14)
-        im2, bmapax2 = self.plot_hemisphere(self._hemisphere, ax2, (ref - sat),
-                                            cmap=palette2, vmin=-1 * vmax, vmax=vmax)
-        bmapax2.set_title("Spatial Anomaly in SIC ('Ice-Chart' - 'OSI SAF')", fontsize=14)
-        plt.tight_layout()
-        cbar_ax1 = fig.add_axes([0.71, 0.52, 0.025, 0.33])
-        fig.colorbar(im1, cax=cbar_ax1)
-        cbar_ax2 = fig.add_axes([0.71, 0.034, 0.025, 0.33])
-        fig.colorbar(im2, cax=cbar_ax2)
-        return fig
+        self.fig, ((self.ax1, self.ax2), (self.ax3, self.ax4)) = plt.subplots(nrows=2, ncols=2, figsize=(11, 11))
+        self.palette1 = plt.cm.gist_ncar
+        self.palette1.set_bad(color='0.8')  # Masked values are grey
+        self.palette2 = plt.cm.seismic
+        self.palette2.set_bad(color='0.8')
+        self.bmapax1 = self.plot_hemisphere(self._hemisphere, self.ax1)
+        self.bmapax2 = self.plot_hemisphere(self._hemisphere, self.ax2)
+        self.bmapax3 = self.plot_hemisphere(self._hemisphere, self.ax3)
+        self.bmapax4 = self.plot_hemisphere(self._hemisphere, self.ax4)
 
     def plot_both_maps_with_anomaly(self, dateidx=None, vmin=0, vmax=100):
-
-        # The plots are not automatically cleared if the function is repeatedly called.
-        # This stops RAM being used up.
-        global bmapax1, bmapax2, bmapax3, bmapax4, fig
-        try:
-            bmapax1.cla()
-            bmapax2.cla()
-            bmapax3.cla()
-            bmapax4.cla()
-        except NameError:
-            print('Could not clear axis')
-            pass
-
         if dateidx is None:
-            # self.dateidx is set by the __iter__ method if not given in the function
             dateidx = self.dateidx
-        fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(nrows=2, ncols=2, figsize=(11, 11))
-        palette1 = plt.cm.gist_ncar
-        palette1.set_bad(color='k', alpha=0.2)  # Masked values are grey
-        palette2 = plt.cm.seismic
-        palette2.set_bad(color='k', alpha=0.2)
-        ref, sat = self.get_ref_sat(dateidx)
-        Date = self.dates[dateidx]
 
-        fig.suptitle('Sea Ice Concentration (OSI SAF vs NIC) Comparison\n{0}'.format(Date),
+        self.Date = self.dates[dateidx]
+        ref, sat = self.get_ref_sat(dateidx)
+        self.fig.suptitle('Sea Ice Concentration (OSI SAF vs NIC) Comparison\n{0}'.format(self.Date),
                      fontsize=14, verticalalignment='top')
 
-        im1, bmapax1 = self.plot_hemisphere(self._hemisphere, ax1, sat, cmap=palette1, vmin=0, vmax=vmax)
-        bmapax1.set_title('OSI SAF Percentage SIC', fontsize=10)
+        im1 = self.bmapax1.imshow(sat, origin='upper', cmap=self.palette1, vmin=0, vmax=vmax)
+        self.bmapax1.ax.set_title('OSI SAF Percentage SIC', fontsize=10)
 
-        im2, bmapax2 = self.plot_hemisphere(self._hemisphere, ax2, ref, cmap=palette1, vmin=0, vmax=vmax)
-        bmapax2.set_title('NIC Percentage SIC', fontsize=10)
+        im2 = self.bmapax2.imshow(ref, origin='upper', cmap=self.palette1, vmin=0, vmax=vmax)
+        self.bmapax2.ax.set_title('NIC Percentage SIC', fontsize=10)
 
         ic_diff = (ref - sat)
 
         data = ma.array(ic_diff, mask=(ref > 10))
-        im3, bmapax3 = self.plot_hemisphere(self._hemisphere, ax3, data, cmap=palette2, vmin=-25, vmax=25)
-        bmapax3.set_title("SIC Anomaly ('NIC' - 'OSI SAF') where the NIC shows Water", fontsize=10)
+        im3 = self.bmapax3.imshow(data, origin='upper', cmap=self.palette2, vmin=-25, vmax=25)
+        self.bmapax3.ax.set_title("SIC Anomaly ('NIC' - 'OSI SAF') where the NIC shows Water", fontsize=10)
 
         data = ma.array(ic_diff, mask=(ref <= 90))
-        im4, bmapax4 = self.plot_hemisphere(self._hemisphere, ax4, data, cmap=palette2, vmin=-25, vmax=25)
-        bmapax4.set_title("SIC Anomaly ('NIC' - 'OSI SAF') where the NIC shows Ice", fontsize=10)
+
+        im4 = self.bmapax4.imshow(data, origin='upper', cmap=self.palette2, vmin=-25, vmax=25)
+        self.bmapax4.ax.set_title("SIC Anomaly ('NIC' - 'OSI SAF') where the NIC shows Ice", fontsize=10)
 
         # plt.tight_layout()
-        cbar_ax1 = fig.add_axes([0.04, 0.548, 0.025, 0.35])
-        fig.colorbar(im1, cax=cbar_ax1)
-        cbar_ax2 = fig.add_axes([0.04, 0.128, 0.025, 0.35])
-        fig.colorbar(im3, cax=cbar_ax2)
+        cbar_ax1 = self.fig.add_axes([0.04, 0.548, 0.025, 0.35])
+        self.fig.colorbar(im1, cax=cbar_ax1)
+        cbar_ax2 = self.fig.add_axes([0.04, 0.128, 0.025, 0.35])
+        self.fig.colorbar(im3, cax=cbar_ax2)
         
-        return fig
+        return self.fig
 
     def plot_kde(self, dateidx=None):
         if dateidx is None:
@@ -233,14 +192,14 @@ class ValidationPlots(ValidationInfo):
             dateidx = self.dateidx
         df = self.dataframe(dateidx)
         df.plot(kind='scatter', x='reference', y='satellite', s=0.001, figsize=(4.5, 4.5))
-        plot([0, 100],[0, 100])
-        grid()
-        xlim(0, 100)
-        ylim(0, 100)
-        xlabel('val. ref. emissivity')
-        ylabel('product emissivity')
+        plt.plot([0, 100],[0, 100])
+        plt.grid()
+        plt.xlim(0, 100)
+        plt.ylim(0, 100)
+        plt.xlabel('val. ref. emissivity')
+        plt.ylabel('product emissivity')
         t = 'Scatter Plot of Ice Concentration in the\n {0} Hemisphere on {1}'
-        title(t.format(self._hemisphere, self.dates[dateidx]))
+        plt.title(t.format(self._hemisphere, self.dates[dateidx]))
 
     def hex_bin(self, dateidx=None):
         if dateidx is None:
@@ -253,17 +212,17 @@ class ValidationPlots(ValidationInfo):
         if dateidx is None:
             dateidx = self.dateidx
         df = self.dataframe(dateidx)
-        d = nan_to_num(df['satellite'])
+        d = np.nan_to_num(df['satellite'])
         bins = [0, 81, 95, 100]
-        bins = linspace(0, 101, 6)
-        hist(d[d>0], bins=bins, alpha=0.5)
-        title('Satellite')
-        grid()
+        bins = np.linspace(0, 101, 6)
+        np.hist(d[d>0], bins=bins, alpha=0.5)
+        plt.title('Satellite')
+        plt.grid()
         #show()
-        d = nan_to_num(df['reference'])
-        hist(d[d>0], bins=bins, alpha=0.5)
-        title('Reference')
-        grid()
+        d = np.nan_to_num(df['reference'])
+        np.hist(d[d>0], bins=bins, alpha=0.5)
+        plt.title('Reference')
+        plt.grid()
 
     def heat_map(self, dateidx=None, colorscale=None):
         global fig
@@ -282,7 +241,7 @@ class ValidationPlots(ValidationInfo):
                       u'(50, 60]', u'(60, 70]', u'(70, 80]', u'(80, 90]', u'(90, 100]'],
                      dtype='object', name=u'Ice Chart SIC')
         pt_norm = pt_norm.reindex(index=idx, columns=cols).fillna(0)
-        fig = figure(figsize=(10, 9))
+        fig = plt.figure(figsize=(10, 9))
         vmin, vmax = 0.1, 60
 
         if colorscale == 'LogNorm':
@@ -293,14 +252,14 @@ class ValidationPlots(ValidationInfo):
             vmin, vmax = 0, 60
         sb.heatmap(pt_norm, annot=True, fmt='.2f', linewidths=.5, cmap=plt.cm.plasma, square=True,
                    vmin=vmin, vmax=vmax, norm=norm, annot_kws={"size": 10})
-        title('{0}'.format(self.dates[dateidx]), fontweight='bold', fontsize=18)
+        plt.title('{0}'.format(self.dates[dateidx]), fontweight='bold', fontsize=18)
         return fig
 
     def heat_map_log(self, dateidx=None):
         return self.heat_map(dateidx, colorscale='LogNorm')
 
 
-def plot_genertor(plot_type, path_to_hdf5, out_dir, path_area_config, projection):
+def plot_genertor(plot_type, path_to_hdf5, path_area_config, projection):
     "Generates images for all days"
 
     vplots = ValidationPlots(path_to_hdf5, path_area_config, projection)
@@ -308,20 +267,68 @@ def plot_genertor(plot_type, path_to_hdf5, out_dir, path_area_config, projection
         vplots.hemisphere = hm
         for i, vp in enumerate(vplots):
             try:
-                fname = '{0}_{1}_{2}.png'.format(plot_type, hm, i)
+                fname = '{0}_{1}_{2}_.png'.format(plot_type, hm, i)
                 out_path = os.path.join(out_dir, fname)
-                print(fname)
                 if not os.path.isfile(out_path):
+                    print('Making: ' + fname)
                     figure = getattr(vp, plot_type)()
                     figure.savefig(out_path)
                     plt.close(figure)
+                else:
+                    print('Skipping: ' + fname)
                 del vp
             except ValueError:
                 pass
             except Exception as e:
                 print(traceback.format_exc())
 
-# imporot_map_with_anolomoly', cfg.path_to_hdf5, out_dir, cfg.path_area_config, 'EASE2')
+
+
+import config.config_osi450 as cfg
+import functools
+
+
+def plot_genertor2(plot_type, out_dir, i):
+    "Generates images for all days"
+
+    try:
+        fname = '{0}_{1}_{2}_.png'.format(plot_type, vplots.hemisphere, i)
+        out_path = os.path.join(out_dir, fname)
+        if not os.path.isfile(out_path):
+            print('Making: ' + fname)
+            figure = getattr(vplots, plot_type)(i)
+            figure.savefig(out_path)
+            plt.close(figure)
+        else:
+            print('Skipping: ' + fname)
+    except ValueError:
+        pass
+    except Exception as e:
+        print(traceback.format_exc())
+
+
+from multiprocessing import Pool
+
+
+if __name__ == '__main__':
+    for hm in ['NH', 'SH']:
+        pool = Pool()           # Create a multiprocessing Pool
+
+        vplots = ValidationPlots(cfg.path_to_hdf5, cfg.path_area_config, 'EASE2')
+
+        pg = functools.partial(plot_genertor2,
+                               'plot_both_maps_with_anomaly',
+                               '/data/jol/validation/plots/plot_map_with_anolomoly/')
+        vplots.hemisphere = hm
+        pool.map(pg, range(0, 10))  # proces data_inputs iterable with pool
+
+
+
+
+# import config.config_osi450 as cfg
+# plot_genertor('plot_both_maps_with_anomaly', cfg.path_to_hdf5,
+#               '/data/jol/validation/plots/plot_map_with_anolomoly/',
+#               cfg.path_area_config, 'EASE2')
 
 """
 
