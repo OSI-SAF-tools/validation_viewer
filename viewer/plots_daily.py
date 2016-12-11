@@ -12,15 +12,19 @@ from __future__ import division
 import numpy as np
 from numpy import ma
 import os
+import sys
 import traceback
 from pandas import *
-import matplotlib.pyplot as plt
 import pyresample as pr
 import h5py
-import gc
 import functools
 from multiprocessing import Pool
 from docopt import docopt
+
+import matplotlib.pyplot as plt
+
+dir_path = os.path.dirname(os.path.realpath(__file__))
+sys.path.append(os.path.join(dir_path, '..'))
 
 
 class ValidationPlots(object):
@@ -39,7 +43,14 @@ class ValidationPlots(object):
         self.df = None # Set in dataframe()
         self.dateidx = None
         self.dateidx_old = None
-        self.setup_plot_both_maps_with_anomaly()
+
+        self.fig, ((self.ax1, self.ax2), (self.ax3, self.ax4)) = None, ((None, None),(None, None))
+        self.palette1 = None
+        self.palette2 = None
+        self.bmapax1 = None
+        self.bmapax2 = None
+        self.bmapax3 = None
+        self.bmapax4 = None
         self.length = self.satellite.shape[-1]
 
     def __iter__(self):
@@ -47,7 +58,6 @@ class ValidationPlots(object):
             self.dateidx = dateidx
             self.date = date
             yield self
-            gc.collect()
             try:
                 plt.close('all')
                 # plt.close(fig)
@@ -154,7 +164,10 @@ class ValidationPlots(object):
         self.bmapax3 = self.plot_hemisphere(self._hemisphere, self.ax3)
         self.bmapax4 = self.plot_hemisphere(self._hemisphere, self.ax4)
 
-    def plot_both_maps_with_anomaly(self, dateidx=None, vmin=0, vmax=100):
+    def plot_both_maps_with_anomaly(self, dateidx=None, vmin=0, vmax=100, origin='bottom'):
+        """
+        For plotting in when running in parallel
+        """
         if dateidx is None:
             dateidx = self.dateidx
 
@@ -163,21 +176,21 @@ class ValidationPlots(object):
         self.fig.suptitle('Sea Ice Concentration (OSI SAF vs NIC) Comparison\n{0}'.format(self.Date),
                      fontsize=14, verticalalignment='top')
 
-        im1 = self.bmapax1.imshow(sat, origin='upper', cmap=self.palette1, vmin=0, vmax=vmax)
+        im1 = self.bmapax1.imshow(sat, origin=origin, cmap=self.palette1, vmin=0, vmax=vmax)
         self.bmapax1.ax.set_title('OSI SAF Percentage SIC', fontsize=10)
 
-        im2 = self.bmapax2.imshow(ref, origin='upper', cmap=self.palette1, vmin=0, vmax=vmax)
+        im2 = self.bmapax2.imshow(ref, origin=origin, cmap=self.palette1, vmin=0, vmax=vmax)
         self.bmapax2.ax.set_title('NIC Percentage SIC', fontsize=10)
 
         ic_diff = (ref - sat)
 
         data = ma.array(ic_diff, mask=(ref > 10))
-        im3 = self.bmapax3.imshow(data, origin='upper', cmap=self.palette2, vmin=-25, vmax=25)
+        im3 = self.bmapax3.imshow(data, origin=origin, cmap=self.palette2, vmin=-25, vmax=25)
         self.bmapax3.ax.set_title("SIC Anomaly ('NIC' - 'OSI SAF') where the NIC shows Water", fontsize=10)
 
         data = ma.array(ic_diff, mask=(ref <= 90))
 
-        im4 = self.bmapax4.imshow(data, origin='upper', cmap=self.palette2, vmin=-25, vmax=25)
+        im4 = self.bmapax4.imshow(data, origin=origin, cmap=self.palette2, vmin=-25, vmax=25)
         self.bmapax4.ax.set_title("SIC Anomaly ('NIC' - 'OSI SAF') where the NIC shows Ice", fontsize=10)
 
         # plt.tight_layout()
@@ -187,6 +200,14 @@ class ValidationPlots(object):
         self.fig.colorbar(im3, cax=cbar_ax2)
         
         return self.fig
+
+    def plot_both_maps_with_anomaly_i(self, dateidx=None, vmin=0, vmax=100):
+        """
+        For Jupyter Interactive Plotting
+        """
+        plt.close('all')
+        self.setup_plot_both_maps_with_anomaly()
+        self.plot_both_maps_with_anomaly(dateidx, vmin, vmax, origin='upper')
 
     def plot_kde(self, dateidx=None):
         if dateidx is None:
@@ -233,7 +254,7 @@ class ValidationPlots(object):
         np.hist(d[d>0], bins=bins, alpha=0.5)
         plt.title('Satellite')
         plt.grid()
-        #show()
+        # show()
         d = np.nan_to_num(df['reference'])
         np.hist(d[d>0], bins=bins, alpha=0.5)
         plt.title('Reference')
@@ -274,35 +295,11 @@ class ValidationPlots(object):
         return self.heat_map(dateidx, colorscale='LogNorm')
 
 
-# def plot_genertor(plot, plot_type, path_to_hdf5, path_area_config, projection):
-#     "Generates images for all days"
-#
-#     vplots = ValidationPlots(path_to_hdf5, path_area_config, projection)
-#     for hm in ('NH', 'SH'):
-#         vplots.hemisphere = hm
-#         for i, vp in enumerate(vplots):
-#             try:
-#                 fname = '{0}_{1}_{2}_.png'.format(plot_type, hm, i)
-#                 out_path = os.path.join(out_dir, fname)
-#                 if not os.path.isfile(out_path):
-#                     print('Making: ' + fname)
-#                     figure = getattr(vp, plot_type)()
-#                     figure.savefig(out_path)
-#                     plt.close(figure)
-#                 else:
-#                     print('Skipping: ' + fname)
-#                 del vp
-#             except ValueError:
-#                 pass
-#             except Exception as e:
-#                 print(traceback.format_exc())
-
-
 def make_plot(plot_type, out_dir, hm, i):
     "Generates images for all days"
 
     try:
-        fname = '{0}_{1}_{2}_.png'.format(plot_type, hm, i)
+        fname = '{0}_{1}_{2}.png'.format(plot_type, hm, i)
         out_path = os.path.join(out_dir, fname)
         if not os.path.isfile(out_path):
             print('Making: ' + fname)
@@ -317,120 +314,29 @@ def make_plot(plot_type, out_dir, hm, i):
         print(traceback.format_exc())
 
 
-if __name__ == '__main__':
-    args = docopt(__doc__)
+def make_video(plot_function, output_directory):
+
+    global vplots
 
     import config.config_osi450 as cfg
+
     vplots = ValidationPlots(cfg.path_to_hdf5, cfg.path_area_config, 'EASE2')
+
     for hm in ['NH', 'SH']:
         vplots.hemisphere = hm
         pg = functools.partial(make_plot,
-                               args['<plot_function>'],
-                               args['<output_directory>'],
+                               plot_function,
+                               output_directory,
                                vplots.hemisphere)
         pool = Pool()
         pool.map(pg, range(0, vplots.length))
+        #pool.map(pg, range(0, 4))
+
+        cmd = "avconv -i '{0}{1}_{2}_%d.png' -r 25 -c:v libx264 -crf 25 -pix_fmt yuv420p {0}/{1}_{2}.mp4"
+        os.system(cmd.format(output_directory, plot_function, hm))
 
 
-# import config.config_osi450 as cfg
-# plot_genertor('plot_both_maps_with_anomaly', cfg.path_to_hdf5,
-#               '/data/jol/validation/plots/plot_map_with_anolomoly/',
-#               cfg.path_area_config, 'EASE2')
-
-"""
-
-# %%bash
-# cd /data2/validation/amsr2
-# wget ftp://ftp.dmi.dk/sat/amsr2_validation/amsr2_val_2015.tar.gz
-# mkdir /data2/validation/amsr2/data
-# tar -xvf amsr2_val_2015.tar.gz -C /home/jol/Documents/Data/amsr2/validation/
-
-# %%bash
-# wget ftp://ftp.dmi.dk/sat/ssmis_emiss/emiss_val_2015.tar.gz
-# mkdir data
-# tar -xvf emiss_val_2015.tar.gz -C data
-
-## Wait for the above code to download the validation data and extract to the 'data' folder in the working directory.
-
-%%bash
-cd /home/jol/Documents/Programs/data_analaysis/validation/plots
-convert -loop 0 NH*2015-01*.png NH_emissivity.gif
-convert -loop 0 SH*2015-01*.png SH_emissivity.gif
-
-
-
-## Create Some Statistics
-
-hm_dic = {'Northern':'NH' , 'Southern':'SH'}
-stats_dict = {}
-for hemisphere in ['Northern', 'Southern']:
-    stats = []
-    for date in dates[0:]:
-        try:
-            df = interact_out(hemisphere, date, 'Dataframe')
-            df = df.dropna()
-            stats.append((datetime.strptime(date, '%Y-%m-%d'),
-                          df['satellite'].mean(),
-                          df['reference'].mean(),
-                          ))
-        except AttributeError:
-            pass
-    stats_dict[hm_dic[hemisphere]] = array(stats)
-
-matplotlib.rcParams.update({'font.size': 18})
-fig, ax = plt.subplots(figsize=(18, 12))
-def plot_err(hem):
-    x = stats_dict[hem][:,0]
-    y = stats_dict[hem][:,1]
-    yerr = stats_dict[hem][:,2]
-    ax.errorbar(x, y, yerr=yerr, fmt='o',alpha=0.5)
-    plttitle = {'NH': 'Northern' , 'SH':'Southern'}
-    title('Mean Difference Between The Product & Reference Emissivity\nwith Std.'
-          ' in the Northern (Blue) & Southern (Green) Hemispheres')
-    #title('Mean Difference Between The Product & Reference Emissivity with Std.\n'
-    #      'In The '+plttitle[hem]+ ' Hemisphere')
-    fig.autofmt_xdate()
-    ylabel('Emissivity')
-plot_err('NH')
-#show()
-plot_err('SH')
-savefig('{0}{1}_{2}{3}'.format(path_to_plots, 'mean', date, '.png'))
-#show()
-
-matplotlib.rcParams.update({'font.size': 10})
-def plot2(hem):
-    fig, ax = plt.subplots()
-    date = stats_dict[hem][:,0]
-    sat = stats_dict[hem][:,1]
-    ref = stats_dict[hem][:,2]
-
-    ax.plot(date, sat,'.-')
-    ax.plot(date, ref,'.-')
-    plttitle = {'NH': 'Northern' , 'SH':'Southern'}
-    title('The Mean Emissivity of the Product & Reference'
-          '\nin the %s Hemisphere' % plttitle[hem])
-    #title('Mean Difference Between The Product & Reference Emissivity with Std.\n'
-    #      'In The '+plttitle[hem]+ ' Hemisphere')
-    fig.autofmt_xdate()
-    ylabel('Emissivity')
-plot2('NH')
-legend(['Product','Reference'],loc=3)
-grid()
-savefig('{0}{1}_{2}{3}'.format(path_to_plots, 'mean_NH', date, '.png'),dpi=120)
-plot2('SH')
-legend(['Product','Reference'],loc=8)
-grid()
-savefig('{0}{1}_{2}{3}'.format(path_to_plots, 'mean_SH', date, '.png'),dpi=120)
-
-
-for i, date in enumerate(dates):
-    try:
-        fig = interact_out(i, 'figure')
-        p_paths = os.path.join(path_to_plots,'{0}_{1}{2}{3}'.format(Hemisphere, date, SUFFIX,'.png'))
-        print(p_paths)
-        fig.savefig(p_paths, dpi=200, bbox_inches='tight')
-    except AttributeError:
-        print "ERROR"
-        pass
-
-"""
+if __name__ == '__main__':
+    plt.switch_backend('cairo')
+    args = docopt(__doc__)
+    make_video(args['<plot_function>'], args['<output_directory>'])
