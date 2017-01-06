@@ -38,7 +38,7 @@ class ValidationPlots(object):
         self.path_to_file = path_to_file
         self.path_area_config = path_area_config
         self.projection = projection
-        self.satellite, self.reference = None, None # Set in read_data()
+        self.satellite, self.reference = None, None  # Set in read_data()
         self.dates = self.read_data()
         self.df = None # Set in dataframe()
         self.dateidx = None
@@ -51,6 +51,7 @@ class ValidationPlots(object):
         self.bmapax2 = None
         self.bmapax3 = None
         self.bmapax4 = None
+        self.setup_plot_both_maps_with_anomaly()
         self.length = self.satellite.shape[-1]
 
     def __iter__(self):
@@ -79,9 +80,9 @@ class ValidationPlots(object):
             self.setup_plot_both_maps_with_anomaly()
             self.length = self.satellite.shape[-1]
 
-    def read_hdf5(self, hemisphere, ref_sat, algo='data'):
+    def read_hdf5(self, ref_sat, algo='data'):
         hdf5 = h5py.File(self.path_to_file, 'r')
-        data = hdf5['maps']['data'][hemisphere][ref_sat]
+        data = hdf5['maps']['data'][self._hemisphere][ref_sat]
         return data.attrs['dates'], data
 
     def get_ref_sat(self, dateidx):
@@ -93,8 +94,8 @@ class ValidationPlots(object):
         return ref, sat
 
     def read_data(self):
-        sat_dates, satellite = self.read_hdf5(self._hemisphere, 'satellite')
-        ref_dates, reference = self.read_hdf5(self._hemisphere, 'reference')
+        sat_dates, satellite = self.read_hdf5('satellite')
+        ref_dates, reference = self.read_hdf5('reference')
         assert all(sat_dates == ref_dates)
 
         satellite = ma.masked_invalid(satellite[:])
@@ -164,7 +165,7 @@ class ValidationPlots(object):
         self.bmapax3 = self.plot_hemisphere(self._hemisphere, self.ax3)
         self.bmapax4 = self.plot_hemisphere(self._hemisphere, self.ax4)
 
-    def plot_both_maps_with_anomaly(self, dateidx=None, vmin=0, vmax=100, origin='bottom'):
+    def plot_both_maps_with_anomaly(self, dateidx=None, vmin=0, vmax=100, origin='upper'):
         """
         For plotting in when running in parallel
         """
@@ -267,7 +268,7 @@ class ValidationPlots(object):
         import seaborn as sb
         from matplotlib.colors import LogNorm
 
-        sb.set(font_scale=1.4)
+        sb.set(font_scale=1.2)
         pt = self.pivot_table(dateidx)
         pt_norm = 100 * pt / pt.sum().sum()
         idx = Index(reversed([u'[0, 10]', u'(10, 20]', u'(20, 30]', u'(30, 40]', u'(40, 50]',
@@ -283,16 +284,30 @@ class ValidationPlots(object):
         if colorscale == 'LogNorm':
             norm = LogNorm(vmin=vmin, vmax=vmax)
             vmin, vmax = 0.1, 60
+            cbar = True
         elif colorscale == None:
             norm = None
             vmin, vmax = 0, 60
-        sb.heatmap(pt_norm, annot=True, fmt='.2f', linewidths=.5, cmap=plt.cm.plasma, square=True,
-                   vmin=vmin, vmax=vmax, norm=norm, annot_kws={"size": 10})
+            cbar = True
+        if colorscale == 'Norm':
+            norm = None
+            cbar = False
+            normheatmap = lambda ax: sb.heatmap(100*pt_norm/pt_norm.max(axis=0),
+                                                annot=False, fmt='.2f', linewidths=.5, cmap=plt.cm.plasma,
+                                                square=True, norm=norm, annot_kws={"size": 10}, cbar=True, ax=ax)
+
+        ax = sb.heatmap(pt_norm, annot=True, fmt='.2f', linewidths=.5, cmap=plt.cm.plasma, square=True,
+                   vmin=vmin, vmax=vmax, norm=norm, annot_kws={"size": 10}, cbar=cbar)
+        if colorscale == 'Norm':
+            normheatmap(ax)
         plt.title('{0}'.format(self.dates[dateidx]), fontweight='bold', fontsize=18)
         return fig
 
     def heat_map_log(self, dateidx=None):
         return self.heat_map(dateidx, colorscale='LogNorm')
+
+    def heat_map_norm(self, dateidx=None):
+        return self.heat_map(dateidx, colorscale='Norm')
 
 
 def make_plot(plot_type, out_dir, hm, i):
@@ -328,11 +343,25 @@ def make_video(plot_function, output_directory):
                                plot_function,
                                output_directory,
                                vplots.hemisphere)
-        pool = Pool()
+        pool = Pool(processes=4)
         pool.map(pg, range(0, vplots.length))
-        #pool.map(pg, range(0, 4))
 
-        cmd = "avconv -i '{0}{1}_{2}_%d.png' -r 25 -c:v libx264 -crf 25 -pix_fmt yuv420p {0}/{1}_{2}.mp4"
+        cmd = """
+        cd {0}
+        rm {2}/*
+        x=1
+        for i in $(ls {1}_{2}*png | sort -t _ -k 5 -g)
+            do
+                echo $i
+                counter=$(printf %04d $x)
+                ln -s {0}/$i {0}/{2}/img"$counter".png
+                x=$(($x+1))
+            done
+        """
+        print(cmd.format(output_directory, plot_function, hm))
+        os.system(cmd.format(output_directory, plot_function, hm))
+
+        cmd = "avconv -i {0}/{2}/img%04d.png -r 25 -c:v libx264 -crf 25 -pix_fmt yuv420p {0}/{1}_{2}.mp4"
         os.system(cmd.format(output_directory, plot_function, hm))
 
 
